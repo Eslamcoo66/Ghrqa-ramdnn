@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>دورة رمضانية – Master & Audience</title>
+<style>
+body { font-family: Arial, sans-serif; background: #f0f0f0; padding: 20px; }
+h1 { text-align: center; margin-bottom: 20px; }
+.group { padding: 15px; margin-bottom: 20px; border-radius: 10px; color: #fff; }
+.group.A { background: #4a90e2; }
+.group.B { background: #50e3c2; }
+.group.E { background: #f5a623; }
+.group.F { background: #d0021b; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #fff; color: #000; border-radius: 5px; overflow: hidden;}
+th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+th { background: #eee; }
+tr:hover { background: #dbe9ff; }
+input[type="number"] { width: 50px; }
+button { padding: 5px 10px; margin-left: 5px; cursor: pointer; border-radius: 5px; border:none; background:#333; color:#fff; }
+button:hover { background: #555; }
+.hidden { display:none; }
+#toggleButtons { text-align:center; margin-bottom:20px; }
+.highlight { background: #fff89a; } /* النتائج الجديدة */
+.lastUpdate { font-weight:bold; margin-bottom: 5px; color:#fff; }
+</style>
+</head>
+<body>
+
+<h1>دورة رمضانية</h1>
+
+<div id="toggleButtons" class="hidden">
+  <button onclick="showMode('master')">Master – إدارة النتائج</button>
+  <button onclick="showMode('audience')">Audience – عرض النتائج</button>
+</div>
+
+<div id="masterView" class="hidden"></div>
+<div id="audienceView"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, onValue, set, push } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC8dNt9ubUzvFRa2NYzh0ov62WmBzv0AWc",
+  authDomain: "gharaqa-ramadan.firebaseapp.com",
+  databaseURL: "https://gharaqa-ramadan-default-rtdb.firebaseio.com",
+  projectId: "gharaqa-ramadan",
+  storageBucket: "gharaqa-ramadan.firebasestorage.app",
+  messagingSenderId: "519550312575",
+  appId: "1:519550312575:web:9ea074b1c882b4a6ff1f4a",
+  measurementId: "G-36KCEXNE8N"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+const MASTER_PASSWORD = "7890";
+const groupsData = {
+  A: ["أصدقاء عبدالوهاب","شباب الشوكة","محلة كيل","أصدقاء حوش عيسي","شباب كوم البوص","الغراقة الغربية"],
+  B: ["الشوكة الحاجر","الريف المصري","الصوالحية","اصدقاء محمد فؤاد","الزمالكاوية","البرنوجي"],
+  E: ["ممتاز","كوم البوص","نجع العزايم","عزبة الست","أنصاف","أصدقاء اسامه الجارحي"],
+  F: ["نجوم بطورس","الديابة","كوم القناطر","المحطة","الحريفة","الغراقة الشرقية"]
+};
+
+let isMaster = false;
+
+if(window.location.search.includes("master")){
+  try{
+    const pw = prompt("ادخل كلمة سر الماستر:");
+    if(pw===MASTER_PASSWORD){ 
+      isMaster=true;
+      document.getElementById("toggleButtons").classList.remove("hidden");
+    } else alert("كلمة السر خطأ! سيتم فتح نسخة الجمهور.");
+  }catch(e){}
+}
+
+const masterDiv = document.getElementById("masterView");
+const audienceDiv = document.getElementById("audienceView");
+
+function createUI(){
+  for(let g in groupsData){
+    // Master
+    if(isMaster){
+      const div = document.createElement("div"); div.className="group "+g;
+      div.innerHTML = `<h2>المجموعة ${g}</h2>
+      <table id="master-table-${g}"><thead><tr>
+      <th>الفريق</th><th>لعب</th><th>فوز</th><th>تعادل</th><th>خسارة</th>
+      <th>أهداف +</th><th>أهداف -</th><th>فارق الأهداف</th><th>نقاط</th>
+      </tr></thead><tbody></tbody></table>
+      <h4>أدخل نتيجة مباراة:</h4>
+      <select id="team1-${g}"></select>
+      <input type="number" id="score1-${g}" min="0" value="0">
+      -
+      <input type="number" id="score2-${g}" min="0" value="0">
+      <select id="team2-${g}"></select>
+      <button onclick="addMatch('${g}')">أضف النتيجة</button>
+      <h4>المباريات المسجلة:</h4>
+      <table id="matches-table-${g}"><thead>
+      <tr><th>الفريق 1</th><th>الأهداف</th><th>الفريق 2</th><th>الأهداف</th><th>تعديل/حذف</th></tr>
+      </thead><tbody></tbody></table>`;
+      masterDiv.appendChild(div);
+
+      const t1 = div.querySelector(`#team1-${g}`);
+      const t2 = div.querySelector(`#team2-${g}`);
+      for(let t of groupsData[g]){ t1.add(new Option(t,t)); t2.add(new Option(t,t)); }
+    }
+
+    // Audience
+    const divA = document.createElement("div"); divA.className="group "+g;
+    divA.innerHTML = `<h2>المجموعة ${g}</h2>
+    <div class="lastUpdate" id="lastUpdate-${g}">آخر تحديث: -</div>
+    <table id="audience-table-${g}"><thead>
+    <tr><th>الفريق</th><th>لعب</th><th>فوز</th><th>تعادل</th><th>خسارة</th>
+    <th>أهداف +</th><th>أهداف -</th><th>فارق الأهداف</th><th>نقاط</th></tr>
+    </thead><tbody></tbody></table>
+    <h4>نتائج المباريات:</h4>
+    <table id="audience-matches-${g}"><thead>
+    <tr><th>الفريق 1</th><th>الأهداف</th><th>الفريق 2</th><th>الأهداف</th></tr>
+    </thead><tbody></tbody></table>`;
+    audienceDiv.appendChild(divA);
+  }
+  for(let g in groupsData) renderGroup(g);
+}
+
+window.addMatch = function(group){
+  const t1 = document.getElementById(`team1-${group}`).value;
+  const t2 = document.getElementById(`team2-${group}`).value;
+  const s1 = parseInt(document.getElementById(`score1-${group}`).value)||0;
+  const s2 = parseInt(document.getElementById(`score2-${group}`).value)||0;
+  if(t1===t2){ alert("لا يمكن اختيار نفس الفريق"); return; }
+  const matchData = {team1:t1, score1:s1, team2:t2, score2:s2, timestamp: Date.now()};
+  push(ref(db, 'matches/'+group), matchData);
+}
+
+function renderGroup(group){
+  const tableBody = document.getElementById(`audience-table-${group}`).querySelector('tbody');
+  const audienceMatches = document.getElementById(`audience-matches-${group}`).querySelector('tbody');
+  const masterBody = isMaster ? document.getElementById(`master-table-${group}`).querySelector('tbody') : null;
+  const masterMatches = isMaster ? document.getElementById(`matches-table-${group}`).querySelector('tbody') : null;
+  const lastUpdateDiv = document.getElementById(`lastUpdate-${group}`);
+
+  const groupRef = ref(db, 'matches/'+group);
+  onValue(groupRef, (snapshot)=>{
+    const matchesData = snapshot.val() || {};
+    const teams = {};
+    let lastTimestamp = 0;
+    for(let t of groupsData[group]){
+      teams[t]={played:0,win:0,draw:0,loss:0,gf:0,ga:0,gd:0,points:0};
+    }
+
+    for(let key in matchesData){
+      const m = matchesData[key];
+      const {team1,team2,score1,score2,timestamp} = m;
+      if(timestamp>lastTimestamp) lastTimestamp=timestamp;
+      if(score1>score2){
+        teams[team1].win++; teams[team1].points+=3; teams[team2].loss++;
+      } else if(score1<score2){
+        teams[team2].win++; teams[team2].points+=3; teams[team1].loss++;
+      } else { teams[team1].draw++; teams[team2].draw++; teams[team1].points++; teams[team2].points++; }
+      teams[team1].played++; teams[team2].played++;
+      teams[team1].gf+=score1; teams[team1].ga+=score2; teams[team1].gd=teams[team1].gf-teams[team1].ga;
+      teams[team2].gf+=score2; teams[team2].ga+=score1; teams[team2].gd=teams[team2].gf-teams[team2].ga;
+    }
+
+    const sorted = Object.keys(teams).sort((a,b)=>{
+      const x=teams[a],y=teams[b];
+      if(y.points!==x.points) return y.points-x.points;
+      return y.gd-x.gd;
+    });
+
+    tableBody.innerHTML='';
+    if(masterBody) masterBody.innerHTML='';
+    for(let t of sorted){
+      const d = teams[t];
+      const tr = document.createElement('tr');
+      tr.innerHTML=`<td>${t}</td><td>${d.played}</td><td>${d.win}</td><td>${d.draw}</td><td>${d.loss}</td><td>${d.gf}</td><td>${d.ga}</td><td>${d.gd}</td><td>${d.points}</td>`;
+      tableBody.appendChild(tr);
+      if(masterBody) masterBody.appendChild(tr.cloneNode(true));
+    }
+
+    audienceMatches.innerHTML='';
+    const now = Date.now();
+    for(let key in matchesData){
+      const m = matchesData[key];
+      const tr = document.createElement('tr');
+      const highlight = (now - m.timestamp)<60000 ? 'highlight' : '';
+      tr.className=highlight;
+      tr.innerHTML=`<td>${m.team1}</td><td>${m.score1}</td><td>${m.team2}</td><td>${m.score2}</td>`;
+      audienceMatches.appendChild(tr);
+    }
+
+    if(lastTimestamp>0){
+      const date = new Date(lastTimestamp);
+      lastUpdateDiv.textContent = `آخر تحديث: ${date.getHours()}:${date.getMinutes()}:${date.getSeconds()}`;
+    }
+
+    if(isMaster){
+      masterMatches.innerHTML='';
+      for(let key in matchesData){
+        const m = matchesData[key];
+        const tr = document.createElement('tr');
+        tr.innerHTML=`<td>${m.team1}</td><td>${m.score1}</td><td>${m.team2}</td><td>${m.score2}</td>
+        <td>
+          <button onclick="editMatch('${group}','${key}')">تعديل</button>
+          <button onclick="deleteMatch('${group}','${key}')">حذف</button>
+        </td>`;
+        masterMatches.appendChild(tr);
+      }
+    }
+  });
+}
+
+window.editMatch=function(group,key){
+  const score1 = prompt("أدخل أهداف الفريق الأول:");
+  const score2 = prompt("أدخل أهداف الفريق الثاني:");
+  if(score1!==null && score2!==null){
+    set(ref(db,'matches/'+group+'/'+key),{...{team1:undefined,team2:undefined},score1:parseInt(score1)||0,score2:parseInt(score2)||0, timestamp: Date.now()});
+  }
+}
+window.deleteMatch=function(group,key){
+  if(confirm("هل تريد حذف المباراة؟")){
+    set(ref(db,'matches/'+group+'/'+key),null);
+  }
+}
+
+window.showMode=function(mode){
+  if(mode==='master'){ masterDiv.classList.remove('hidden'); audienceDiv.classList.add('hidden'); }
+  else { masterDiv.classList.add('hidden'); audienceDiv.classList.remove('hidden'); }
+}
+
+createUI();
+</script>
+
+</body>
+</html>
